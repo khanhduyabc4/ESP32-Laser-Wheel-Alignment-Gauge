@@ -86,26 +86,6 @@
     background: #0b1220; border-radius: 12px; padding: 10px 12px;
     max-height: 120px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;
   }
-
-  /* --- Lịch sử 5 lần đo --- */
-  .history { text-align: left; }
-  .hist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  button.small { padding: 6px 12px; font-size: .8rem; border-radius: 8px; }
-  .hist-empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 6px 0; }
-  .hist-item {
-    display: flex; flex-direction: column; gap: 4px;
-    padding: 8px 10px; border-radius: 10px; background: var(--card2);
-    margin-bottom: 8px;
-  }
-  .hist-item:last-child { margin-bottom: 0; }
-  .hist-top { display: flex; align-items: center; gap: 10px; }
-  .hist-idx { color: var(--muted); font-size: .8rem; min-width: 22px; }
-  .hist-result { font-weight: 800; font-size: 1.05rem; flex: 1; }
-  .hist-detail { color: var(--muted); font-size: .78rem; }
-  .hist-tag { font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
-  .hist-tag.in  { background: rgba(34,197,94,.18);  color: var(--ok); }
-  .hist-tag.out { background: rgba(245,158,11,.18); color: var(--warn); }
-  .hist-tag.zero{ background: rgba(148,163,184,.18); color: var(--muted); }
 </style>
 </head>
 <body>
@@ -150,17 +130,6 @@
     <button id="disconnectBtn" class="ghost" disabled>Ngắt kết nối</button>
   </div>
 
-  <!-- Lịch sử 5 lần đo gần nhất -->
-  <div class="card history">
-    <div class="hist-head">
-      <span class="label">5 lần đo gần nhất</span>
-      <button id="clearHistBtn" class="ghost small">Xóa</button>
-    </div>
-    <div id="histList" class="hist-list">
-      <div class="hist-empty">Chưa có kết quả.</div>
-    </div>
-  </div>
-
   <!-- Nhật ký -->
   <div id="log" class="log">Sẵn sàng. Nhấn "Kết nối" để bắt đầu.</div>
 
@@ -182,10 +151,6 @@ let latestMm    = 0;       // Giá trị khoảng cách realtime mới nhất (m
 
 let measureStep = 0;       // 0 = chờ đo lần 1, 1 = chờ đo lần 2
 let m1 = null, m2 = null;
-
-let history = [];          // Lưu tối đa 5 kết quả gần nhất (mới nhất ở đầu)
-const HISTORY_MAX = 5;
-const HISTORY_KEY = "wheelAlignHistory";   // Khóa lưu trong localStorage
 
 /* ================================================================
  *  TIỆN ÍCH GIAO DIỆN
@@ -317,19 +282,18 @@ function onMeasure() {
     // Xác định độ chụm theo dấu của kết quả
     const toe = $("toe");
     toe.classList.remove("in", "out", "zero");
-    let toeText, toeClass, toeTag;
+    let toeText;
     if (diff > 0) {
-      toeText = "Độ chụm dương (Toe-in)"; toeClass = "in";   toeTag = "Toe-in";
+      toeText = "Độ chụm dương (Toe-in)";
+      toe.classList.add("in");
     } else if (diff < 0) {
-      toeText = "Độ chụm âm (Toe-out)";   toeClass = "out";  toeTag = "Toe-out";
+      toeText = "Độ chụm âm (Toe-out)";
+      toe.classList.add("out");
     } else {
-      toeText = "Không lệch (0)";         toeClass = "zero"; toeTag = "0";
+      toeText = "Không lệch (0)";
+      toe.classList.add("zero");
     }
     toe.textContent = toeText;
-    toe.classList.add(toeClass);
-
-    // Lưu vào lịch sử 5 lần đo gần nhất
-    addHistory(m1, m2, diff, toeTag, toeClass);
 
     measureStep = 0;
     $("measureBtn").textContent = "ĐO (lần 1)";
@@ -354,77 +318,12 @@ function resetMeasure() {
 }
 
 /* ================================================================
- *  LỊCH SỬ 5 LẦN ĐO GẦN NHẤT
- * ================================================================ */
-function addHistory(v1, v2, diff, toeText, toeClass) {
-  // Thêm vào đầu mảng, cắt còn tối đa HISTORY_MAX phần tử
-  history.unshift({ v1, v2, diff, toeText, toeClass });
-  if (history.length > HISTORY_MAX) history.pop();
-  saveHistory();
-  renderHistory();
-}
-
-/* Lưu lịch sử xuống localStorage (tồn tại sau khi đóng/tải lại app) */
-function saveHistory() {
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  } catch (e) {
-    log("Không lưu được lịch sử: " + e.message);
-  }
-}
-
-/* Tải lịch sử đã lưu khi mở app */
-function loadHistory() {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) history = parsed.slice(0, HISTORY_MAX);
-    }
-  } catch (e) {
-    history = [];
-  }
-  renderHistory();
-}
-
-function renderHistory() {
-  const list = $("histList");
-  if (history.length === 0) {
-    list.innerHTML = '<div class="hist-empty">Chưa có kết quả.</div>';
-    return;
-  }
-  list.innerHTML = history.map((h, i) => {
-    const sign = h.diff > 0 ? "+" : "";
-    return `
-      <div class="hist-item">
-        <div class="hist-top">
-          <span class="hist-idx">#${i + 1}</span>
-          <span class="hist-result">${sign}${h.diff} mm</span>
-          <span class="hist-tag ${h.toeClass}">${h.toeText}</span>
-        </div>
-        <div class="hist-detail">M1=${h.v1} mm · M2=${h.v2} mm</div>
-      </div>`;
-  }).join("");
-}
-
-function clearHistory() {
-  history = [];
-  try { localStorage.removeItem(HISTORY_KEY); } catch (e) {}
-  renderHistory();
-  log("Đã xóa lịch sử.");
-}
-
-/* ================================================================
  *  GẮN SỰ KIỆN NÚT
  * ================================================================ */
 $("connectBtn").addEventListener("click", connect);
 $("disconnectBtn").addEventListener("click", disconnect);
 $("measureBtn").addEventListener("click", onMeasure);
 $("resetBtn").addEventListener("click", resetMeasure);
-$("clearHistBtn").addEventListener("click", clearHistory);
-
-// Tải lịch sử đã lưu ngay khi mở app
-loadHistory();
 </script>
 </body>
 </html>
