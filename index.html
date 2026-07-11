@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Đo Khoảng Cách VL53L1X</title>
+<style>
+  :root {
+    --bg:        #0f172a;
+    --card:      #1e293b;
+    --card2:     #334155;
+    --text:      #f1f5f9;
+    --muted:     #94a3b8;
+    --accent:    #38bdf8;
+    --ok:        #22c55e;
+    --err:       #ef4444;
+    --warn:      #f59e0b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 16px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.25rem; text-align: center; margin: 8px 0 16px; }
+
+  /* --- Thanh trạng thái + nút kết nối --- */
+  .topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .status {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    font-size: .9rem; color: var(--muted);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--err); transition: .3s; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+  button {
+    font: inherit; border: none; border-radius: 12px; padding: 12px 16px;
+    background: var(--accent); color: #05202b; font-weight: 700;
+    cursor: pointer; transition: transform .05s, opacity .2s;
+  }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: var(--card2); color: var(--text); }
+
+  /* --- Thẻ hiển thị --- */
+  .card {
+    background: var(--card); border-radius: 16px; padding: 18px;
+    margin-bottom: 14px; text-align: center;
+  }
+  .label { font-size: .8rem; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; }
+  .live-value { font-size: 3.4rem; font-weight: 800; line-height: 1.1; margin: 4px 0; }
+  .live-value.error { color: var(--err); font-size: 2rem; }
+  .unit { font-size: 1.1rem; color: var(--muted); font-weight: 500; }
+
+  /* --- Nút ĐO to --- */
+  .measure-btn {
+    width: 100%; padding: 20px; font-size: 1.3rem; border-radius: 16px;
+    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    color: #052030; margin-bottom: 14px;
+  }
+  .hint { text-align: center; font-size: .85rem; color: var(--warn); margin: -6px 0 14px; min-height: 1.1em; }
+
+  /* --- Lưới M1 / M2 / HIỆU --- */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .mini { background: var(--card); border-radius: 14px; padding: 14px; text-align: center; }
+  .mini .val { font-size: 1.6rem; font-weight: 800; margin-top: 4px; }
+  .mini.diff { grid-column: 1 / 3; background: var(--card2); }
+  .mini.diff .val { font-size: 2.2rem; color: var(--accent); }
+  .mini .val.pending { color: var(--muted); }
+
+  .row { display: flex; gap: 12px; }
+  .row button { flex: 1; }
+
+  /* --- Log --- */
+  .log {
+    margin-top: 14px; font-size: .78rem; color: var(--muted);
+    background: #0b1220; border-radius: 12px; padding: 10px 12px;
+    max-height: 120px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+  <h1>📏 Đo Khoảng Cách VL53L1X</h1>
+
+  <!-- Trạng thái + kết nối -->
+  <div class="topbar">
+    <div class="status"><span id="dot" class="dot"></span><span id="statusText">Chưa kết nối</span></div>
+    <button id="connectBtn">Kết nối</button>
+  </div>
+
+  <!-- Khoảng cách realtime -->
+  <div class="card">
+    <div class="label">Khoảng cách hiện tại</div>
+    <div id="liveValue" class="live-value">--<span class="unit"> mm</span></div>
+  </div>
+
+  <!-- Nút ĐO -->
+  <button id="measureBtn" class="measure-btn" disabled>ĐO (lần 1)</button>
+  <div id="hint" class="hint"></div>
+
+  <!-- Kết quả 2 lần đo + hiệu -->
+  <div class="grid">
+    <div class="mini">
+      <div class="label">Lần đo 1 (M1)</div>
+      <div id="m1" class="val pending">--</div>
+    </div>
+    <div class="mini">
+      <div class="label">Lần đo 2 (M2)</div>
+      <div id="m2" class="val pending">--</div>
+    </div>
+    <div class="mini diff">
+      <div class="label">Hiệu (M2 − M1)</div>
+      <div id="diff" class="val pending">--</div>
+    </div>
+  </div>
+
+  <!-- Nút phụ -->
+  <div class="row">
+    <button id="resetBtn" class="ghost" disabled>Đặt lại</button>
+    <button id="disconnectBtn" class="ghost" disabled>Ngắt kết nối</button>
+  </div>
+
+  <!-- Nhật ký -->
+  <div id="log" class="log">Sẵn sàng. Nhấn "Kết nối" để bắt đầu.</div>
+
+<script>
+/* ================================================================
+ *  CẤU HÌNH BLE — phải trùng UUID với firmware ESP32 (chữ thường)
+ * ================================================================ */
+const SERVICE_UUID = "6b2e4a10-1c3d-4f5a-9b8c-2e1d0a5f7c33";
+const LIVE_UUID    = "6b2e4a11-1c3d-4f5a-9b8c-2e1d0a5f7c33"; // Notify: DIST=xxx mm
+const DEVICE_NAME  = "DistanceMeter";
+
+/* ================================================================
+ *  BIẾN TRẠNG THÁI
+ * ================================================================ */
+let bleDevice   = null;
+let liveChar    = null;
+let latestValid = false;   // Giá trị realtime hiện có hợp lệ không
+let latestMm    = 0;       // Giá trị khoảng cách realtime mới nhất (mm)
+
+let measureStep = 0;       // 0 = chờ đo lần 1, 1 = chờ đo lần 2
+let m1 = null, m2 = null;
+
+/* ================================================================
+ *  TIỆN ÍCH GIAO DIỆN
+ * ================================================================ */
+const $ = (id) => document.getElementById(id);
+
+function log(msg) {
+  const el = $("log");
+  el.textContent = "• " + msg + "\n" + el.textContent;
+}
+
+function setStatus(connected) {
+  $("dot").classList.toggle("on", connected);
+  $("statusText").textContent = connected ? "Đã kết nối" : "Chưa kết nối";
+  $("connectBtn").style.display    = connected ? "none" : "block";
+  $("disconnectBtn").disabled      = !connected;
+  $("measureBtn").disabled         = !connected;
+  $("resetBtn").disabled           = !connected;
+  if (!connected) $("liveValue").innerHTML = '--<span class="unit"> mm</span>';
+}
+
+/* Cập nhật hiển thị khoảng cách realtime */
+function updateLive() {
+  const el = $("liveValue");
+  if (latestValid) {
+    el.classList.remove("error");
+    el.innerHTML = latestMm + '<span class="unit"> mm</span>';
+  } else {
+    el.classList.add("error");
+    el.textContent = "LỖI";
+  }
+}
+
+/* ================================================================
+ *  KẾT NỐI BLE (Web Bluetooth)
+ * ================================================================ */
+async function connect() {
+  if (!navigator.bluetooth) {
+    alert("Trình duyệt không hỗ trợ Web Bluetooth. Hãy dùng Chrome (Android/PC) hoặc Bluefy (iOS).");
+    return;
+  }
+  try {
+    log("Đang quét thiết bị...");
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ name: DEVICE_NAME }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
+
+    log("Đang kết nối GATT...");
+    const server  = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    liveChar      = await service.getCharacteristic(LIVE_UUID);
+
+    // Bật Notify để nhận dữ liệu realtime
+    await liveChar.startNotifications();
+    liveChar.addEventListener("characteristicvaluechanged", onLiveData);
+
+    setStatus(true);
+    log("Đã kết nối " + bleDevice.name);
+  } catch (err) {
+    log("Lỗi kết nối: " + err.message);
+  }
+}
+
+function disconnect() {
+  if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+}
+
+function onDisconnected() {
+  setStatus(false);
+  log("Mất kết nối. Nhấn 'Kết nối' để thử lại.");
+}
+
+/* ================================================================
+ *  NHẬN DỮ LIỆU REALTIME
+ *  Firmware gửi chuỗi: "DIST=523 mm" hoặc "ERROR"
+ * ================================================================ */
+function onLiveData(event) {
+  const text = new TextDecoder().decode(event.target.value).trim();
+
+  if (text.startsWith("DIST=")) {
+    const num = parseInt(text.replace("DIST=", ""), 10);
+    if (!isNaN(num)) { latestMm = num; latestValid = true; }
+    else             { latestValid = false; }
+  } else {
+    latestValid = false; // "ERROR" hoặc chuỗi lạ
+  }
+  updateLive();
+}
+
+/* ================================================================
+ *  LOGIC "NÚT ĐO" — đo 2 lần + tính hiệu (xử lý phía app)
+ * ================================================================ */
+function onMeasure() {
+  if (!latestValid) {
+    $("hint").textContent = "⚠ Giá trị hiện không hợp lệ — chỉnh cảm biến rồi đo lại.";
+    log("Đo thất bại: giá trị không hợp lệ.");
+    return;
+  }
+  $("hint").textContent = "";
+
+  if (measureStep === 0) {
+    // --- Lần đo thứ nhất ---
+    m1 = latestMm;
+    $("m1").textContent = m1 + " mm";
+    $("m1").classList.remove("pending");
+    // Xoá kết quả cũ
+    m2 = null;
+    $("m2").textContent = "--"; $("m2").classList.add("pending");
+    $("diff").textContent = "--"; $("diff").classList.add("pending");
+
+    measureStep = 1;
+    $("measureBtn").textContent = "ĐO (lần 2)";
+    log("Lần 1: M1 = " + m1 + " mm");
+  } else {
+    // --- Lần đo thứ hai + tính hiệu ---
+    m2 = latestMm;
+    $("m2").textContent = m2 + " mm";
+    $("m2").classList.remove("pending");
+
+    const diff = m2 - m1;                      // Có dấu: + xa ra, − gần lại
+    const sign = diff > 0 ? "+" : "";
+    $("diff").textContent = sign + diff + " mm";
+    $("diff").classList.remove("pending");
+
+    measureStep = 0;
+    $("measureBtn").textContent = "ĐO (lần 1)";
+    log("Lần 2: M2 = " + m2 + " mm → HIỆU = " + sign + diff + " mm");
+  }
+}
+
+/* Đặt lại toàn bộ chu kỳ đo */
+function resetMeasure() {
+  measureStep = 0;
+  m1 = m2 = null;
+  ["m1", "m2", "diff"].forEach(id => {
+    $(id).textContent = "--";
+    $(id).classList.add("pending");
+  });
+  $("measureBtn").textContent = "ĐO (lần 1)";
+  $("hint").textContent = "";
+  log("Đã đặt lại. Chờ đo lần 1.");
+}
+
+/* ================================================================
+ *  GẮN SỰ KIỆN NÚT
+ * ================================================================ */
+$("connectBtn").addEventListener("click", connect);
+$("disconnectBtn").addEventListener("click", disconnect);
+$("measureBtn").addEventListener("click", onMeasure);
+$("resetBtn").addEventListener("click", resetMeasure);
+</script>
+</body>
+</html>
