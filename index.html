@@ -93,14 +93,15 @@
   button.small { padding: 6px 12px; font-size: .8rem; border-radius: 8px; }
   .hist-empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 6px 0; }
   .hist-item {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; flex-direction: column; gap: 4px;
     padding: 8px 10px; border-radius: 10px; background: var(--card2);
-    margin-bottom: 8px; font-size: .9rem;
+    margin-bottom: 8px;
   }
   .hist-item:last-child { margin-bottom: 0; }
-  .hist-idx { color: var(--muted); font-size: .8rem; min-width: 18px; }
-  .hist-detail { flex: 1; color: var(--muted); font-size: .8rem; }
-  .hist-result { font-weight: 800; font-size: 1.05rem; }
+  .hist-top { display: flex; align-items: center; gap: 10px; }
+  .hist-idx { color: var(--muted); font-size: .8rem; min-width: 22px; }
+  .hist-result { font-weight: 800; font-size: 1.05rem; flex: 1; }
+  .hist-detail { color: var(--muted); font-size: .78rem; }
   .hist-tag { font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
   .hist-tag.in  { background: rgba(34,197,94,.18);  color: var(--ok); }
   .hist-tag.out { background: rgba(245,158,11,.18); color: var(--warn); }
@@ -396,10 +397,12 @@ function renderHistory() {
     const sign = h.diff > 0 ? "+" : "";
     return `
       <div class="hist-item">
-        <span class="hist-idx">#${i + 1}</span>
-        <span class="hist-result">${sign}${h.diff} mm</span>
-        <span class="hist-detail">M1=${h.v1} · M2=${h.v2}</span>
-        <span class="hist-tag ${h.toeClass}">${h.toeText}</span>
+        <div class="hist-top">
+          <span class="hist-idx">#${i + 1}</span>
+          <span class="hist-result">${sign}${h.diff} mm</span>
+          <span class="hist-tag ${h.toeClass}">${h.toeText}</span>
+        </div>
+        <div class="hist-detail">M1=${h.v1} mm · M2=${h.v2} mm</div>
       </div>`;
   }).join("");
 }
